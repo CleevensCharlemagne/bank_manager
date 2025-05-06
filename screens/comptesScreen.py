@@ -115,8 +115,74 @@ class CompteFrame(ctk.CTkFrame):
         print("Add clicked")
 
     def edit_action(self):
-        print("Edit clicked")
+        selected = self.tree.selection()
+        if not selected:
+            tk.messagebox.showwarning("Avertissement", "Veuillez sélectionner un compte.")
+            return
+
+        compte_data = self.tree.item(selected[0], "values")
+        CompteDetailsWindow(self, compte_data)
 
     def quit_action(self):
         """Lorsque l'on clique sur 'Quitter', revenir à l'écran principal."""
         self.controller.revenir_accueil()  # Appel à revenir_accueil de EcranPrincipal
+
+class CompteDetailsWindow(ctk.CTkToplevel):
+    def __init__(self, parent, compte_data):
+        super().__init__(parent)
+        self.title("Détails du compte")
+        self.geometry("550x600")
+
+        # Champs de base
+        champs_base = [
+            ("Numéro de compte", compte_data[0]),
+            ("Nom du compte", compte_data[1]),
+            ("Nom client", compte_data[2]),
+            ("Prénom client", compte_data[3]),
+            ("Solde", compte_data[4]),
+            ("ID client", compte_data[5]),
+            ("Statut", compte_data[6]),
+            ("Créé le", compte_data[7]),
+            ("Fermé le", compte_data[8]),
+            ("Type de compte", compte_data[9])
+        ]
+
+        for i, (label_text, value) in enumerate(champs_base):
+            label = ctk.CTkLabel(self, text=label_text + ":", anchor="w", font=("Arial", 13))
+            label.grid(row=i, column=0, padx=10, pady=5, sticky="w")
+
+            entry = ctk.CTkEntry(self, width=300)
+            entry.insert(0, str(value))
+            entry.configure(state="readonly")
+            entry.grid(row=i, column=1, padx=10, pady=5)
+
+        # Si le compte est de type courant, on ajoute les champs supplémentaires
+        if compte_data[9] == "courant":
+            courant_info = self.recuperer_courant_details(compte_data[0])
+
+            if courant_info:
+                labels_courant = [
+                    ("Numéro de compte", courant_info[0]),
+                    ("Pourcentage de découvert", courant_info[1]),
+                    ("Taux d’intérêt", courant_info[2]),
+                    ("Découvert utilisé", courant_info[3]),
+                    ("Dette", courant_info[4]),
+                ]
+                base_index = len(champs_base)
+                for j, (libelle, val) in enumerate(labels_courant):
+                    label = ctk.CTkLabel(self, text=libelle + ":", anchor="w", font=("Arial", 13))
+                    label.grid(row=base_index + j, column=0, padx=10, pady=5, sticky="w")
+
+                    entry = ctk.CTkEntry(self, width=300)
+                    entry.insert(0, str(val))
+                    entry.configure(state="readonly")
+                    entry.grid(row=base_index + j, column=1, padx=10, pady=5)
+
+    def recuperer_courant_details(self, account_num):
+        conn = sqlite3.connect("banque.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM courant_details WHERE account_num = ?", (account_num,))
+        result = cursor.fetchone()
+        conn.close()
+        return result
+
