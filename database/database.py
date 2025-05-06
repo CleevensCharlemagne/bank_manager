@@ -47,6 +47,17 @@ def create_database():
         );
     ''')
 
+    # Table de liaison comptes - propriétaires multiples
+    cursor.execute('''
+           CREATE TABLE IF NOT EXISTS account_owners (
+               account_num TEXT,
+               client_id TEXT,
+               PRIMARY KEY (account_num, client_id),
+               FOREIGN KEY (account_num) REFERENCES accounts(account_num),
+               FOREIGN KEY (client_id) REFERENCES clients(client_id)
+           );
+       ''')
+
     conn.commit()
     conn.close()
     print("Base de données créée avec succès.")

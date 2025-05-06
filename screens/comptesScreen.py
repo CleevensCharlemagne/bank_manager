@@ -131,9 +131,38 @@ class CompteDetailsWindow(ctk.CTkToplevel):
     def __init__(self, parent, compte_data):
         super().__init__(parent)
         self.title("Détails du compte")
-        self.geometry("550x600")
+        self.geometry("700x650")
+        self.compte_data = compte_data
+        self.entrees = []
 
-        # Champs de base
+        # Container scrollable
+        container = ctk.CTkFrame(self)
+        container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(container)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ctk.CTkScrollbar(container, orientation="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        content_frame = ctk.CTkFrame(canvas)
+        canvas.create_window((0, 0), window=content_frame, anchor="nw")
+
+        account_num = compte_data[0]
+        owners = self.get_account_owners(account_num)
+        if owners:
+            owner_names = ", ".join([f"{prenom} {nom}" for prenom, nom in owners])
+            titre_texte = f"Compte enregistré au nom de : {owner_names}"
+        else:
+            titre_texte = "Compte enregistré au nom de : (inconnu)"
+
+        titre_label = ctk.CTkLabel(self, text=titre_texte, font=ctk.CTkFont(size=18, weight="bold"))
+        titre_label.pack(pady=20)
+
+        # Données principales
         champs_base = [
             ("Numéro de compte", compte_data[0]),
             ("Nom du compte", compte_data[1]),
@@ -147,19 +176,24 @@ class CompteDetailsWindow(ctk.CTkToplevel):
             ("Type de compte", compte_data[9])
         ]
 
-        for i, (label_text, value) in enumerate(champs_base):
-            label = ctk.CTkLabel(self, text=label_text + ":", anchor="w", font=("Arial", 13))
-            label.grid(row=i, column=0, padx=10, pady=5, sticky="w")
+        self.editable_entries = []  # list of entries that should be editable
 
-            entry = ctk.CTkEntry(self, width=300)
+        for i, (label_text, value) in enumerate(champs_base):
+            row_frame = ctk.CTkFrame(content_frame, fg_color="transparent")  # fond transparent
+            row_frame.pack(pady=5, anchor="center")  # centré horizontalement
+
+            label = ctk.CTkLabel(row_frame, text=label_text + " :", width=200, anchor="e", font=("Roboto Medium", 13, "bold"))
+            label.pack(side="left", padx=10)
+
+            entry = ctk.CTkEntry(row_frame, width=300)
             entry.insert(0, str(value))
             entry.configure(state="readonly")
-            entry.grid(row=i, column=1, padx=10, pady=5)
+            entry.pack(side="left")
+            self.entrees.append(entry)
 
-        # Si le compte est de type courant, on ajoute les champs supplémentaires
+        # Champs compte courant
         if compte_data[9] == "courant":
             courant_info = self.recuperer_courant_details(compte_data[0])
-
             if courant_info:
                 labels_courant = [
                     ("Numéro de compte", courant_info[0]),
@@ -168,15 +202,37 @@ class CompteDetailsWindow(ctk.CTkToplevel):
                     ("Découvert utilisé", courant_info[3]),
                     ("Dette", courant_info[4]),
                 ]
-                base_index = len(champs_base)
-                for j, (libelle, val) in enumerate(labels_courant):
-                    label = ctk.CTkLabel(self, text=libelle + ":", anchor="w", font=("Arial", 13))
-                    label.grid(row=base_index + j, column=0, padx=10, pady=5, sticky="w")
+                for (label_text, value) in labels_courant:
+                    row_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                    row_frame.pack(pady=5, anchor="center")
 
-                    entry = ctk.CTkEntry(self, width=300)
-                    entry.insert(0, str(val))
+                    label = ctk.CTkLabel(row_frame, text=label_text + " :", width=200, anchor="e", font=("Roboto Medium", 13, "bold"))
+                    label.pack(side="left", padx=10)
+
+                    entry = ctk.CTkEntry(row_frame, width=300)
+                    entry.insert(0, str(value))
                     entry.configure(state="readonly")
-                    entry.grid(row=base_index + j, column=1, padx=10, pady=5)
+                    entry.pack(side="left")
+                    self.entrees.append(entry)
+
+        # Scroll molette
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # --- BOUTONS EN BAS ---
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=10)
+
+        self.btn_fermer = ctk.CTkButton(button_frame, text="Fermer", command=self.fermer_compte, font=("Roboto Medium", 13, "bold"))
+        self.btn_fermer.pack(side="left", padx=10)
+
+        self.btn_quitter = ctk.CTkButton(button_frame, text="Quitter", command=self.destroy, font=("Roboto Medium", 13, "bold"))
+        self.btn_quitter.pack(side="left", padx=10)
+
+    def fermer_compte(self):
+        # Action personnalisée pour "Fermer" (peut-être désactiver le compte)
+        print("Compte fermé (à implémenter)")
 
     def recuperer_courant_details(self, account_num):
         conn = sqlite3.connect("banque.db")
@@ -186,3 +242,29 @@ class CompteDetailsWindow(ctk.CTkToplevel):
         conn.close()
         return result
 
+    def get_account_owners(self, account_num):
+        conn = sqlite3.connect("banque.db")
+        cursor = conn.cursor()
+
+        # Récupérer le propriétaire principal
+        cursor.execute("""
+            SELECT c.first_name, c.last_name
+            FROM accounts a
+            JOIN clients c ON a.owner_id = c.client_id
+            WHERE a.account_num = ?
+        """, (account_num,))
+        owners = cursor.fetchall()
+
+        # Récupérer les co-titulaires supplémentaires
+        cursor.execute("""
+            SELECT c.first_name, c.last_name
+            FROM account_owners ao
+            JOIN clients c ON ao.client_id = c.client_id
+            WHERE ao.account_num = ? AND c.client_id != (
+                SELECT owner_id FROM accounts WHERE account_num = ?
+            )
+        """, (account_num, account_num))
+        co_owners = cursor.fetchall()
+
+        conn.close()
+        return owners + co_owners
