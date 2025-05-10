@@ -113,6 +113,7 @@ class CompteFrame(ctk.CTkFrame):
 
     def add_action(self):
         print("Add clicked")
+        AjouterCompteWindow(self)
 
     def edit_action(self):
         selected = self.tree.selection()
@@ -268,3 +269,117 @@ class CompteDetailsWindow(ctk.CTkToplevel):
 
         conn.close()
         return owners + co_owners
+
+class AjouterCompteWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Ajouter un compte")
+        self.geometry("500x600")
+        self.entries = {}
+        self.type_compte = tk.StringVar(value="courant")
+
+        ctk.CTkLabel(self, text="Type de compte :", font=("Roboto", 14)).pack(pady=10)
+        type_menu = ctk.CTkOptionMenu(self, values=["courant", "epargne"], variable=self.type_compte, command=self.afficher_champs_specifiques)
+        type_menu.pack()
+
+        self.frame_formulaire = ctk.CTkFrame(self)
+        self.frame_formulaire.pack(pady=20, padx=20, fill="both", expand=True)
+
+        self.afficher_formulaire_base()
+        self.afficher_champs_specifiques("courant")
+
+        bouton_ajouter = ctk.CTkButton(self, text="Créer le compte", command=self.ajouter_compte)
+        bouton_ajouter.pack(pady=10)
+
+    def afficher_formulaire_base(self):
+        labels = ["Numéro de compte", "Nom du compte", "Solde initial"]
+        for label in labels:
+            frame = ctk.CTkFrame(self.frame_formulaire)
+            frame.pack(pady=5)
+            ctk.CTkLabel(frame, text=label + " :", width=150, anchor="e").pack(side="left", padx=10)
+            entry = ctk.CTkEntry(frame, width=250)
+            entry.pack(side="left")
+            self.entries[label] = entry
+
+        # Menu déroulant pour sélectionner un client
+        frame = ctk.CTkFrame(self.frame_formulaire)
+        frame.pack(pady=5)
+        ctk.CTkLabel(frame, text="Propriétaire principal :", width=150, anchor="e").pack(side="left", padx=10)
+
+        self.clients_disponibles = self.charger_clients()
+        client_noms = [nom for cid, nom in self.clients_disponibles]
+        self.client_selection = tk.StringVar(value=client_noms[0] if client_noms else "")
+        client_menu = ctk.CTkOptionMenu(frame, variable=self.client_selection, values=client_noms)
+        client_menu.pack(side="left")
+
+        # Stocker l'ID du client sélectionné
+        self.entries["ID client"] = self.client_selection
+
+    def afficher_champs_specifiques(self, type_compte):
+        if hasattr(self, 'frame_specifique'):
+            self.frame_specifique.destroy()
+        self.frame_specifique = ctk.CTkFrame(self.frame_formulaire)
+        self.frame_specifique.pack(pady=10)
+
+        self.entries["Spécifique"] = {}  # champs spécifiques
+
+        if type_compte == "courant":
+            for label in ["Pourcentage de découvert", "Taux d’intérêt", "Découvert utilisé", "Dette"]:
+                frame = ctk.CTkFrame(self.frame_specifique)
+                frame.pack(pady=5)
+                ctk.CTkLabel(frame, text=label + " :", width=150, anchor="e").pack(side="left", padx=10)
+                entry = ctk.CTkEntry(frame, width=250)
+                entry.pack(side="left")
+                self.entries["Spécifique"][label] = entry
+
+    def charger_clients(self):
+        conn = sqlite3.connect("banque.db")
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT client_id, first_name || ' ' || last_name FROM clients")
+            return cursor.fetchall()
+        except sqlite3.Error as e:
+            tk.messagebox.showerror("Erreur", f"Erreur lors du chargement des clients : {e}")
+            return []
+        finally:
+            conn.close()
+
+    def ajouter_compte(self):
+        import datetime
+        conn = sqlite3.connect("banque.db")
+        cursor = conn.cursor()
+        try:
+            num = self.entries["Numéro de compte"].get()
+            nom = self.entries["Nom du compte"].get()
+            solde = float(self.entries["Solde initial"].get())
+            client_nom = self.entries["ID client"].get()
+            client_id = next((cid for cid, nom in self.clients_disponibles if nom == client_nom), None)
+            type_cpt = self.type_compte.get()
+            today = datetime.date.today()
+
+            # Insérer dans la table accounts
+            cursor.execute("""
+                INSERT INTO accounts (account_num, account_name, balance, owner_id, status, creation_date, account_type)
+                VALUES (?, ?, ?, ?, '1', ?, ?)
+            """, (num, nom, solde, client_id, today, type_cpt))
+
+            # Si courant, insérer aussi dans courant_details
+            if type_cpt == "courant":
+                decouv = float(self.entries["Spécifique"]["Pourcentage de découvert"].get())
+                taux = float(self.entries["Spécifique"]["Taux d’intérêt"].get())
+                utilise = float(self.entries["Spécifique"]["Découvert utilisé"].get())
+                dette = float(self.entries["Spécifique"]["Dette"].get())
+
+                cursor.execute("""
+                    INSERT INTO courant_details (account_num, overdraft_percentage, interest_rate, overdraft_used, debt)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (num, decouv, taux, utilise, dette))
+
+            conn.commit()
+            tk.messagebox.showinfo("Succès", "Compte ajouté avec succès !")
+            self.destroy()
+
+        except Exception as e:
+            tk.messagebox.showerror("Erreur", f"Erreur lors de l'ajout : {e}")
+        finally:
+            conn.close()
