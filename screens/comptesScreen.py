@@ -2,6 +2,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
 import sqlite3
+from tkinter import messagebox
 
 class CompteFrame(ctk.CTkFrame):
     def __init__(self, master, controller, **kwargs):
@@ -301,19 +302,41 @@ class AjouterCompteWindow(ctk.CTkToplevel):
             entry.pack(side="left")
             self.entries[label] = entry
 
-        # Menu déroulant pour sélectionner un client
-        frame = ctk.CTkFrame(self.frame_formulaire)
-        frame.pack(pady=5)
-        ctk.CTkLabel(frame, text="Propriétaire principal :", width=150, anchor="e").pack(side="left", padx=10)
-
+        # d'abord charger les clients
         self.clients_disponibles = self.charger_clients()
-        client_noms = [nom for cid, nom in self.clients_disponibles]
-        self.client_selection = tk.StringVar(value=client_noms[0] if client_noms else "")
-        client_menu = ctk.CTkOptionMenu(frame, variable=self.client_selection, values=client_noms)
-        client_menu.pack(side="left")
+        client_noms = ["(Aucun)"] + [nom for _, nom in self.clients_disponibles]
 
-        # Stocker l'ID du client sélectionné
-        self.entries["ID client"] = self.client_selection
+        # Variables liées aux menus déroulants
+        self.owner_var = tk.StringVar()
+        self.copro1_var = tk.StringVar()
+        self.copro2_var = tk.StringVar()
+
+        self.copro1_var.set("Aucun")
+        self.copro2_var.set("Aucun")
+
+        # Menu propriétaire principal
+        frame_owner = ctk.CTkFrame(self.frame_formulaire)
+        frame_owner.pack(pady=5)
+        ctk.CTkLabel(frame_owner, text="Propriétaire principal :", width=150, anchor="e").pack(side="left", padx=10)
+        self.owner_menu = ctk.CTkOptionMenu(frame_owner, variable=self.owner_var, values=client_noms,
+                                            command=self.verifier_unique_client_selection)
+        self.owner_menu.pack(side="left")
+
+        # Menu copropriétaire 1
+        frame_copro1 = ctk.CTkFrame(self.frame_formulaire)
+        frame_copro1.pack(pady=5)
+        ctk.CTkLabel(frame_copro1, text="Copropriétaire 1 :", width=150, anchor="e").pack(side="left", padx=10)
+        self.copro1_menu = ctk.CTkOptionMenu(frame_copro1, variable=self.copro1_var, values=client_noms,
+                                             command=self.verifier_unique_client_selection)
+        self.copro1_menu.pack(side="left")
+
+        # Menu copropriétaire 2
+        frame_copro2 = ctk.CTkFrame(self.frame_formulaire)
+        frame_copro2.pack(pady=5)
+        ctk.CTkLabel(frame_copro2, text="Copropriétaire 2 :", width=150, anchor="e").pack(side="left", padx=10)
+        self.copro2_menu = ctk.CTkOptionMenu(frame_copro2, variable=self.copro2_var, values=client_noms,
+                                             command=self.verifier_unique_client_selection)
+        self.copro2_menu.pack(side="left")
 
     def afficher_champs_specifiques(self, type_compte):
         if hasattr(self, 'frame_specifique'):
@@ -321,7 +344,7 @@ class AjouterCompteWindow(ctk.CTkToplevel):
         self.frame_specifique = ctk.CTkFrame(self.frame_formulaire)
         self.frame_specifique.pack(pady=10)
 
-        self.entries["Spécifique"] = {}  # champs spécifiques
+        self.entries["Spécifique"] = {}
 
         if type_compte == "courant":
             for label in ["Pourcentage de découvert", "Taux d’intérêt", "Découvert utilisé", "Dette"]:
@@ -332,54 +355,112 @@ class AjouterCompteWindow(ctk.CTkToplevel):
                 entry.pack(side="left")
                 self.entries["Spécifique"][label] = entry
 
+            # Activer les menus pour les copropriétaires
+            self.copro1_menu.configure(state="normal")
+            self.copro2_menu.configure(state="normal")
+        else:
+            # Désactiver les menus pour les copropriétaires
+            self.copro2_menu.configure(state="disabled")
+
     def charger_clients(self):
         conn = sqlite3.connect("banque.db")
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT client_id, first_name || ' ' || last_name FROM clients")
-            return cursor.fetchall()
+            cursor.execute("SELECT client_id, first_name, last_name FROM clients")
+            # Création de la liste avec format : "id - Prénom Nom"
+            return [(row[0], f"{row[0]} - {row[1]} {row[2]}") for row in cursor.fetchall()]
         except sqlite3.Error as e:
             tk.messagebox.showerror("Erreur", f"Erreur lors du chargement des clients : {e}")
             return []
         finally:
             conn.close()
 
+    def get_id_client_by_nom(self, nom_affiche):
+        if nom_affiche == "Aucun":
+            return None
+        for id_client, nom_formate in self.clients_disponibles:
+            if nom_formate == nom_affiche:
+                return id_client
+        return None
+
+    def verifier_unique_client_selection(self, value=None):
+        # Récupérer les clients sélectionnés dans les menus
+        id_principal = self.get_id_client_by_nom(self.owner_var.get())
+        id_copro1 = self.get_id_client_by_nom(self.copro1_var.get())
+        id_copro2 = self.get_id_client_by_nom(self.copro2_var.get())
+
+        # Vérification : si le propriétaire principal est le même que l'un des copropriétaires
+        if (id_copro1 == id_principal or id_copro2 == id_principal):
+            messagebox.showerror("Erreur",
+                                 "Un client ne peut pas être à la fois propriétaire principal et copropriétaire.")
+            return False
+
+        # Vérifier que copropriétaire 1 et copropriétaire 2 ne sont pas les mêmes
+        if (id_copro1 == id_copro2) and (id_copro1 != None and id_copro2 != None):
+            messagebox.showerror("Erreur", "Copropriétaire 1 et copropriétaire 2 ne peuvent pas être les mêmes.")
+            return False
+
+        return True
+
     def ajouter_compte(self):
-        import datetime
+        if not self.verifier_unique_client_selection():
+            return
+
+        # Récupération des champs de saisie
+        numero = self.entries["Numéro de compte"].get().strip()
+        nom = self.entries["Nom du compte"].get().strip()
+        solde = self.entries["Solde initial"].get().strip()
+
+        # Vérification de la validité des champs
+        if not numero or not nom or not solde:
+            messagebox.showerror("Erreur", "Tous les champs doivent être remplis.")
+            return
+
+        try:
+            solde = float(solde)
+        except ValueError:
+            messagebox.showerror("Erreur", "Le solde initial doit être un nombre.")
+            return
+
+        # Récupérer les ID des clients sélectionnés
+        id_principal = self.get_id_client_by_nom(self.owner_var.get())
+        id_copro1 = self.get_id_client_by_nom(self.copro1_var.get())
+        id_copro2 = self.get_id_client_by_nom(self.copro2_var.get())
+
+        if id_principal is None:
+            messagebox.showerror("Erreur", "Propriétaire principal invalide.")
+            return
+
+        # Connexion à la base de données
         conn = sqlite3.connect("banque.db")
         cursor = conn.cursor()
+
         try:
-            num = self.entries["Numéro de compte"].get()
-            nom = self.entries["Nom du compte"].get()
-            solde = float(self.entries["Solde initial"].get())
-            client_nom = self.entries["ID client"].get()
-            client_id = next((cid for cid, nom in self.clients_disponibles if nom == client_nom), None)
-            type_cpt = self.type_compte.get()
-            today = datetime.date.today()
+            # Insertion dans la table comptes
+            cursor.execute(
+                "INSERT INTO accounts (account_num, account_name balance, owner_id) VALUES (?, ?, ?, ?)",
+                (numero, nom, solde, id_principal)
+            )
 
-            # Insérer dans la table accounts
-            cursor.execute("""
-                INSERT INTO accounts (account_num, account_name, balance, owner_id, status, creation_date, account_type)
-                VALUES (?, ?, ?, ?, '1', ?, ?)
-            """, (num, nom, solde, client_id, today, type_cpt))
-
-            # Si courant, insérer aussi dans courant_details
-            if type_cpt == "courant":
-                decouv = float(self.entries["Spécifique"]["Pourcentage de découvert"].get())
-                taux = float(self.entries["Spécifique"]["Taux d’intérêt"].get())
-                utilise = float(self.entries["Spécifique"]["Découvert utilisé"].get())
-                dette = float(self.entries["Spécifique"]["Dette"].get())
-
-                cursor.execute("""
-                    INSERT INTO courant_details (account_num, overdraft_percentage, interest_rate, overdraft_used, debt)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (num, decouv, taux, utilise, dette))
+            # Insertion des copropriétaires si sélectionnés
+            for id_copro in [id_copro1, id_copro2]:
+                if id_copro and id_copro != id_principal:
+                    cursor.execute(
+                        "INSERT INTO account_owners (account_num, client_id) VALUES (?, ?)",
+                        (numero, id_copro)
+                    )
 
             conn.commit()
-            tk.messagebox.showinfo("Succès", "Compte ajouté avec succès !")
+            messagebox.showinfo("Succès", "Compte ajouté avec succès.")
             self.destroy()
+            self.master_app.actualiser_tableau()  # Si nécessaire pour rafraîchir la vue principale
 
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Erreur", "Le numéro de compte existe déjà.")
         except Exception as e:
-            tk.messagebox.showerror("Erreur", f"Erreur lors de l'ajout : {e}")
+            messagebox.showerror("Erreur", f"Une erreur est survenue : {e}")
         finally:
             conn.close()
+
+
+

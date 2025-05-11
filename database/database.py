@@ -28,7 +28,7 @@ def create_database():
             balance REAL NOT NULL,
             owner_id TEXT NOT NULL,
             status TEXT CHECK(status IN ('0', '1')),
-            creation_date DATE,
+            creation_date DATE DEFAULT (DATE('now')),
             close_date DATE,
             account_type TEXT CHECK(account_type IN ('courant', 'epargne')),
             FOREIGN KEY (owner_id) REFERENCES clients(client_id)
