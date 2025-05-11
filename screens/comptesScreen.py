@@ -438,7 +438,7 @@ class AjouterCompteWindow(ctk.CTkToplevel):
         try:
             # Insertion dans la table comptes
             cursor.execute(
-                "INSERT INTO accounts (account_num, account_name balance, owner_id) VALUES (?, ?, ?, ?)",
+                "INSERT INTO accounts (account_num, account_name, balance, owner_id) VALUES (?, ?, ?, ?)",
                 (numero, nom, solde, id_principal)
             )
 
